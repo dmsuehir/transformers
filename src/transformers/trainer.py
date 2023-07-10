@@ -1812,10 +1812,10 @@ class Trainer:
                                 labels = inputs.pop("labels")
                             else:
                                 labels = None
-                            start_time = time.time()
+                            forward_start_time = time.time()
                             with torch.cpu.amp.autocast(dtype=torch.bfloat16):
                                 outputs = model(**inputs)
-                            forward_pass_time = time.time() - start_time
+                            forward_pass_time = time.time() - forward_start_time
                             import inspect
                             if "FORWARD_LOG" in os.environ and inspect.stack()[1][3] != 'prediction_step':
                                 with open(os.environ["FORWARD_LOG"], "a") as f:
@@ -1843,7 +1843,7 @@ class Trainer:
                         if self.args.n_gpu > 1:
                             loss = loss.mean()  # mean() to average on multi-gpu parallel training
 
-                        start_time = time.time()
+                        backward_start_time = time.time()
                         if self.do_grad_scaling:
                             self.scaler.scale(loss).backward()
                         elif self.use_apex:
@@ -1851,8 +1851,8 @@ class Trainer:
                                 scaled_loss.backward()
                         else:
                             self.accelerator.backward(loss)
-                        backward_pass_time = time.time() - start_time
-
+                        backward_pass_time = time.time() - backward_start_time
+    
                         if "BACKWARD_LOG" in os.environ and self.is_in_train:
                             with open(os.environ["BACKWARD_LOG"], "a") as f:
                                 f.write("{}\n".format(backward_pass_time))
