@@ -758,8 +758,13 @@ class DistilBertForSequenceClassification(DistilBertPreTrainedModel):
             config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
             `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        import time
+        forward_start = time.time()
+        print("START: Distilbert forward")
 
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        
+        distilbert_start = time.time()
         distilbert_output = self.distilbert(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -769,6 +774,7 @@ class DistilBertForSequenceClassification(DistilBertPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
+        print("distilbert time:", time.time() - distilbert_start)
         hidden_state = distilbert_output[0]  # (bs, seq_len, dim)
         pooled_output = hidden_state[:, 0]  # (bs, dim)
         pooled_output = self.pre_classifier(pooled_output)  # (bs, dim)
@@ -786,6 +792,8 @@ class DistilBertForSequenceClassification(DistilBertPreTrainedModel):
                 else:
                     self.config.problem_type = "multi_label_classification"
 
+            print("Problem type:", self.config.problem_type)
+
             if self.config.problem_type == "regression":
                 loss_fct = MSELoss()
                 if self.num_labels == 1:
@@ -794,7 +802,9 @@ class DistilBertForSequenceClassification(DistilBertPreTrainedModel):
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
                 loss_fct = CrossEntropyLoss()
+                start_loss = time.time()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                print("DEBUG: loss function time:", time.time() - start_loss)
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss()
                 loss = loss_fct(logits, labels)
@@ -802,6 +812,8 @@ class DistilBertForSequenceClassification(DistilBertPreTrainedModel):
         if not return_dict:
             output = (logits,) + distilbert_output[1:]
             return ((loss,) + output) if loss is not None else output
+
+        print("END: Distilbert forward", time.time() - forward_start)
 
         return SequenceClassifierOutput(
             loss=loss,

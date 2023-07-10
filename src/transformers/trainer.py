@@ -326,6 +326,8 @@ class Trainer:
             output_dir = "tmp_trainer"
             logger.info(f"No `TrainingArguments` passed, using `output_dir={output_dir}`.")
             args = TrainingArguments(output_dir=output_dir)
+
+        print(args)
         self.args = args
         # Seed must be set before instantiating the model when using model
         enable_full_determinism(self.args.seed) if self.args.full_determinism else set_seed(self.args.seed)
@@ -374,6 +376,7 @@ class Trainer:
             self.is_model_parallel = True
         else:
             self.is_model_parallel = False
+        print("is_model_parallel =", self.is_model_parallel)
 
         if getattr(model, "hf_device_map", None) is not None:
             devices = [device for device in set(model.hf_device_map.values()) if device not in ["cpu", "disk"]]
@@ -468,6 +471,8 @@ class Trainer:
             self.limit_all_gathers = False
             if self.args.fsdp_config.get("limit_all_gathers", False):
                 self.limit_all_gathers = True
+        print("shardded ddp:", self.sharded_ddp)
+        print("fsdp:", self.fsdp)
 
         # one place to sort out whether to place the model on device or not
         # postpone switching model to cuda when:
@@ -984,7 +989,6 @@ class Trainer:
             ]
 
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
-
             if self.sharded_ddp == ShardedDDPOption.SIMPLE:
                 self.optimizer = OSS(
                     params=optimizer_grouped_parameters,
@@ -1009,6 +1013,9 @@ class Trainer:
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(self.optimizer)
+
+        print("self.optimizer:", self.optimizer)
+        print("optimiser type:", type(self.optimizer))
 
         return self.optimizer
 
@@ -1326,10 +1333,9 @@ class Trainer:
 
     def _wrap_model(self, model, training=True, dataloader=None):
         # The accelerator calls ipex.optimize, so it seems like this isn't needed
-        #if self.args.use_ipex:
-        #    dtype = torch.bfloat16 if self.use_cpu_amp else torch.float32
-        #    model = self.ipex_optimize_model(model, training, dtype=dtype)
-
+        if self.args.use_ipex:
+            dtype = torch.bfloat16 if self.use_cpu_amp else torch.float32
+            model = self.ipex_optimize_model(model, training, dtype=dtype)
         if is_sagemaker_mp_enabled():
             # Wrapping the base model twice in a DistributedModel will raise an error.
             if isinstance(self.model_wrapped, smp.model.DistributedModel):
@@ -1479,6 +1485,7 @@ class Trainer:
             kwargs:
                 Additional keyword arguments used to hide deprecated arguments
         """
+        print("IN TRAIN.......")
         if resume_from_checkpoint is False:
             resume_from_checkpoint = None
 
@@ -1492,9 +1499,11 @@ class Trainer:
         # do_train is not a reliable argument, as it might not be set and .train() still called, so
         # the following is a workaround:
         if (args.fp16_full_eval or args.bf16_full_eval) and not args.do_train:
+            print("move to device")
             self._move_model_to_device(self.model, args.device)
 
         if "model_path" in kwargs:
+            print("model pack in kwargs")
             resume_from_checkpoint = kwargs.pop("model_path")
             warnings.warn(
                 "`model_path` is deprecated and will be removed in a future version. Use `resume_from_checkpoint` "
@@ -1506,10 +1515,12 @@ class Trainer:
         # This might change the seed so needs to run first.
         self._hp_search_setup(trial)
         self._train_batch_size = self.args.train_batch_size
+        print("train batch size", self._train_batch_size)
 
         # Model re-init
         model_reloaded = False
         if self.model_init is not None:
+            print("model init")
             # Seed must be set before instantiating the model when using model_init.
             enable_full_determinism(self.args.seed) if self.args.full_determinism else set_seed(self.args.seed)
             self.model = self.call_model_init(trial)
@@ -1519,22 +1530,27 @@ class Trainer:
 
         # Load potential model checkpoint
         if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
+            print("resume from checkpoint")
             resume_from_checkpoint = get_last_checkpoint(args.output_dir)
             if resume_from_checkpoint is None:
                 raise ValueError(f"No valid checkpoint found in output directory ({args.output_dir})")
 
         if resume_from_checkpoint is not None and not is_sagemaker_mp_enabled() and not self.is_deepspeed_enabled:
+            print("resume from checkpoint")
             self._load_from_checkpoint(resume_from_checkpoint)
 
         # If model was re-initialized, put it on the right device and update self.model_wrapped
         if model_reloaded:
+            print("model reloaded")
             if self.place_model_on_device:
                 self._move_model_to_device(self.model, args.device)
             self.model_wrapped = self.model
 
+        print("auto find batch size", args.auto_find_batch_size)
         inner_training_loop = find_executable_batch_size(
             self._inner_training_loop, self._train_batch_size, args.auto_find_batch_size
         )
+        print("DONE TRAIN AND GOING TO INNER TRAINING LOOP")
         return inner_training_loop(
             args=args,
             resume_from_checkpoint=resume_from_checkpoint,
@@ -1545,6 +1561,7 @@ class Trainer:
     def _inner_training_loop(
         self, batch_size=None, args=None, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None
     ):
+        print("INNER TRAINING LOOP")
         self.accelerator.free_memory()
         self._train_batch_size = batch_size
         logger.debug(f"Currently training with a batch size of: {self._train_batch_size}")
@@ -1638,10 +1655,12 @@ class Trainer:
         use_accelerator_prepare = True if model is self.model else False
 
         if delay_optimizer_creation:
+            print("Create optimizer and scheduler")
             self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         # prepare using `accelerator` prepare
         if use_accelerator_prepare:
+            print("using accelerator to prepare")
             self.model.train()
             if hasattr(self.lr_scheduler, "step"):
                 if self.use_apex:
@@ -1655,10 +1674,12 @@ class Trainer:
                 )
 
         if self.is_fsdp_enabled:
+            print("fsdp enabled")
             self.model = model
 
         # for the rest of this function `model` is the outside model, whether it was wrapped or not
         if model is not self.model:
+            print("use model as model_wrapped")
             self.model_wrapped = model
 
         # backward compatibility
@@ -1799,8 +1820,23 @@ class Trainer:
                 if step % args.gradient_accumulation_steps == 0:
                     self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
 
-                with self.accelerator.accumulate(model):
-                    tr_loss_step = self.training_step(model, inputs)
+                # +++++++++++++++++++++++++++++++++++++++++++++++++++++++=
+                use_original = False
+
+                if use_original:
+                    with self.accelerator.accumulate(model):
+                        print("accelerator accumulate training step")
+                        local_train = self.training_step_2
+                        tr_loss_step = local_train(model, inputs)
+                else:
+                    with self.accelerator.accumulate(model):
+                        model.train()
+                        inputs = self._prepare_inputs(inputs)
+                        with self.compute_loss_context_manager():
+                            outputs = model(**inputs)
+                            loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+                            self.accelerator.backward(loss)
+                            tr_loss_step = loss.detach() / self.args.gradient_accumulation_steps
 
                 if (
                     args.logging_nan_inf_filter
@@ -2621,6 +2657,14 @@ class Trainer:
 
         return ctx_manager
 
+    def training_step_2(self, model, inputs):
+        model.train()
+        inputs = self._prepare_inputs(inputs)
+        outputs = model(**inputs)
+        loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+        self.accelerator.backward(loss)
+        return loss.detach() / self.args.gradient_accumulation_steps
+
     def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
         """
         Perform a training step on a batch of inputs.
@@ -2642,29 +2686,37 @@ class Trainer:
         model.train()
         inputs = self._prepare_inputs(inputs)
 
-        if is_sagemaker_mp_enabled():
-            loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps)
-            return loss_mb.reduce_mean().detach().to(self.args.device)
+        #if is_sagemaker_mp_enabled():
+        #    loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps)
+        #    return loss_mb.reduce_mean().detach().to(self.args.device)
 
-        with self.compute_loss_context_manager():
-            loss = self.compute_loss(model, inputs)
+        #with self.compute_loss_context_manager():
+        #    loss = self.compute_loss(model, inputs)
 
-        if self.args.n_gpu > 1:
-            loss = loss.mean()  # mean() to average on multi-gpu parallel training
+        # - - - - - - - - - - -
 
-        start_time = time.time()
-        if self.do_grad_scaling:
-            self.scaler.scale(loss).backward()
-        elif self.use_apex:
-            with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-                scaled_loss.backward()
-        else:
-            self.accelerator.backward(loss)
-        backward_pass_time = time.time() - start_time
+        labels = None
+        outputs = model(**inputs)
+        loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+        # - - - - - - - - - - -
 
-        if "BACKWARD_LOG" in os.environ and self.is_in_train:
-            with open(os.environ["BACKWARD_LOG"], "a") as f:
-                f.write("{}\n".format(backward_pass_time))
+        #iif self.args.n_gpu > 1:
+        #    loss = loss.mean()  # mean() to average on multi-gpu parallel training
+
+        #start_time = time.time()
+        #if self.do_grad_scaling:
+        #    self.scaler.scale(loss).backward()
+        #elif self.use_apex:
+        #    with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+        #        scaled_loss.backward()
+        #else:
+        #    self.accelerator.backward(loss)
+        self.accelerator.backward(loss)
+        #backward_pass_time = time.time() - start_time
+
+        #if "BACKWARD_LOG" in os.environ and self.is_in_train:
+        #    with open(os.environ["BACKWARD_LOG"], "a") as f:
+        #        f.write("{}\n".format(backward_pass_time))
 
         return loss.detach() / self.args.gradient_accumulation_steps
 
@@ -2674,38 +2726,37 @@ class Trainer:
 
         Subclass and override for custom behavior.
         """
-        if self.label_smoother is not None and "labels" in inputs:
-            labels = inputs.pop("labels")
-        else:
-            labels = None
-        start_time = time.time()
-        with torch.cpu.amp.autocast(dtype=torch.bfloat16):
-            outputs = model(**inputs)
-        forward_pass_time = time.time() - start_time
-        import inspect
-        if "FORWARD_LOG" in os.environ and inspect.stack()[1][3] != 'prediction_step':
-            with open(os.environ["FORWARD_LOG"], "a") as f:
-                f.write("{}\n".format(forward_pass_time))
+        #if self.label_smoother is not None and "labels" in inputs:
+        #    labels = inputs.pop("labels")
+        #else:
+        #    labels = None
+        labels = None
+        #istart_time = time.time()
+        outputs = model(**inputs)
+        #forward_pass_time = time.time() - start_time
+        #if "FORWARD_LOG" in os.environ:
+        #    with open(os.environ["FORWARD_LOG"], "a") as f:
+        #        f.write("{}\n".format(forward_pass_time))
 
         # Save past state if it exists
         # TODO: this needs to be fixed and made cleaner later.
-        if self.args.past_index >= 0:
-            self._past = outputs[self.args.past_index]
+        #if self.args.past_index >= 0:
+        #    self._past = outputs[self.args.past_index]
 
-        if labels is not None:
-            if unwrap_model(model)._get_name() in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values():
-                loss = self.label_smoother(outputs, labels, shift_labels=True)
-            else:
-                loss = self.label_smoother(outputs, labels)
-        else:
-            if isinstance(outputs, dict) and "loss" not in outputs:
-                raise ValueError(
-                    "The model did not return a loss from the inputs, only the following keys: "
-                    f"{','.join(outputs.keys())}. For reference, the inputs it received are {','.join(inputs.keys())}."
-                )
-            # We don't use .loss here since the model may return tuples instead of ModelOutput.
-            loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
-
+        #if labels is not None:
+        #    if unwrap_model(model)._get_name() in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values():
+        #        loss = self.label_smoother(outputs, labels, shift_labels=True)
+        #    else:
+        #        loss = self.label_smoother(outputs, labels)
+        #else:
+        #    if isinstance(outputs, dict) and "loss" not in outputs:
+        #        raise ValueError(
+        #            "The model did not return a loss from the inputs, only the following keys: "
+        #             f"{','.join(outputs.keys())}. For reference, the inputs it received are {','.join(inputs.keys())}."
+        #        )
+        #    # We don't use .loss here since the model may return tuples instead of ModelOutput.
+        #    loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+        loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
         return (loss, outputs) if return_outputs else loss
 
     def is_local_process_zero(self) -> bool:
