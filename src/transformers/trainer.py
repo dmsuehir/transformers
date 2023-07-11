@@ -1808,7 +1808,7 @@ class Trainer:
                         tr_loss_step = loss_mb.reduce_mean().detach().to(self.args.device)
                     else:
                         with self.compute_loss_context_manager():
-                            tr_loss_step = self.compute_loss(model, inputs)
+                            loss = self.compute_loss(model, inputs)
                             # if self.label_smoother is not None and "labels" in inputs:
                             #     labels = inputs.pop("labels")
                             # else:
