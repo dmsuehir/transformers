@@ -2679,14 +2679,12 @@ class Trainer:
         arguments, depending on the situation.
         """
         if self.use_cuda_amp or self.use_cpu_amp:
-            print("DEBUG: Trainer using autocast context manager")
             ctx_manager = (
                 torch.cpu.amp.autocast(cache_enabled=cache_enabled, dtype=self.amp_dtype)
                 if self.use_cpu_amp
                 else torch.cuda.amp.autocast(cache_enabled=cache_enabled, dtype=self.amp_dtype)
             )
         else:
-            print("DEBUG: Trainer not using autocast context manager")
             ctx_manager = contextlib.nullcontext() if sys.version_info >= (3, 7) else contextlib.suppress()
 
         return ctx_manager
