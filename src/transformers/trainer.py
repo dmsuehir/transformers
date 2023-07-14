@@ -2716,8 +2716,7 @@ class Trainer:
         else:
             labels = None
         start_time = time.time()
-        with torch.cpu.amp.autocast(dtype=torch.bfloat16):
-            outputs = model(**inputs)
+        outputs = model(**inputs)
         forward_pass_time = time.time() - start_time
         import inspect
         if "FORWARD_LOG" in os.environ and inspect.stack()[1][3] != 'prediction_step':
