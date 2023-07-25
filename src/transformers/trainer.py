@@ -1801,8 +1801,41 @@ class Trainer:
                 if step % args.gradient_accumulation_steps == 0:
                     self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
 
+                # Original Code with `training_step`
+                # with self.accelerator.accumulate(model):
+                #     tr_loss_step = training_step(model, inputs)
+
+                # Start modified code
                 with self.accelerator.accumulate(model):
-                    tr_loss_step = self.training_step(model, inputs)
+                    model.train()
+                    inputs = self._prepare_inputs(inputs)
+
+                    if is_sagemaker_mp_enabled():
+                        loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps)
+                        tr_loss_step = loss_mb.reduce_mean().detach().to(self.args.device)
+                    else:
+                        with self.compute_loss_context_manager():
+                            loss = self.compute_loss(model, inputs)
+
+                        if self.args.n_gpu > 1:
+                            loss = loss.mean()  # mean() to average on multi-gpu parallel training
+
+                        backward_start_time = time.time()
+                        if self.do_grad_scaling:
+                            self.scaler.scale(loss).backward()
+                        elif self.use_apex:
+                            with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                                scaled_loss.backward()
+                        else:
+                            self.accelerator.backward(loss)
+                        backward_pass_time = time.time() - backward_start_time
+
+                        if "BACKWARD_LOG" in os.environ and self.is_in_train:
+                            with open(os.environ["BACKWARD_LOG"], "a") as f:
+                                f.write("{}\n".format(backward_pass_time))
+
+                        tr_loss_step = loss.detach() / self.args.gradient_accumulation_steps
+                # End modified code
 
                 if (
                     args.logging_nan_inf_filter
