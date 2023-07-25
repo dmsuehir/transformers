@@ -1672,9 +1672,6 @@ class TrainingArguments:
                 mixed_precision_dtype = "bf16"
             os.environ["ACCELERATE_MIXED_PRECISION"] = mixed_precision_dtype
 
-        os.environ["ACCELERATE_USE_CPU"] = str(self.no_cuda)
-        os.environ["ACCELERATE_USE_IPEX"] = str(self.use_ipex)
-
     def __str__(self):
         self_as_dict = asdict(self)
 
