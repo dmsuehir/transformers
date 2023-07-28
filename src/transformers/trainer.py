@@ -197,7 +197,7 @@ if is_peft_available():
 if is_accelerate_available():
     from accelerate import Accelerator, skip_first_batches
     from accelerate import __version__ as accelerate_version
-    from accelerate.utils import DistributedDataParallelKwargs, GradientAccumulationPlugin
+    from accelerate.utils import DistributedDataParallelKwargs, GradientAccumulationPlugin, release_memory
 
     if version.parse(accelerate_version) > version.parse("0.20.3"):
         from accelerate.utils import (
@@ -2646,6 +2646,8 @@ class Trainer:
 
         with self.compute_loss_context_manager():
             loss = self.compute_loss(model, inputs)
+
+        release_memory(inputs)
 
         if self.args.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu parallel training
