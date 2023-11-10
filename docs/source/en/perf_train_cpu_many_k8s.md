@@ -30,6 +30,8 @@ is used to deploy the distributed training job to the cluster. For efficient tra
 This guide assume that you already have a Kubernetes clusters with multiple CPUs. Use `kubectl get nodes` to see a list
 the nodes that are available on your cluster.
 
+### Kubeflow Install
+
 Follow the [Kubeflow installation](https://www.kubeflow.org/docs/started/installing-kubeflow/) guide to deploy the
 Kubeflow resources to your cluster. To verify that the PyTorch custom resource has been deployed to your cluster, use
 `kubectl get crd` and verify that the output includes `pytorchjob.kubeflow.org` like the example below:
@@ -44,6 +46,8 @@ for storing data, depending on your situation. If you are using a cloud service 
 storage buckets can be setup to be used as storage with Kubernetes. Alternatively, NFS can be used with a Kubernetes
 storageclass and a persistent volume claim (PVC).
 
+<!-- TODO: Add more details here -->
+
 ## Container
 
 Since Kubernetes requires jobs to run in a [Docker container](https://www.docker.com/resources/what-container/), you
@@ -53,7 +57,7 @@ typically need to include PyTorch, transformers, Intel Extension for PyTorch, In
 OpenSSH to communicate between the containers. This container can be used as a base and then you can include your
 training script on top of that.
 
-<!-- Maybe we can contribute a dockerfile here that is updated and includes everything needed to run distributed jobs -->
+<!-- TODO: Maybe we can contribute a dockerfile here that is updated and includes everything needed to run distributed jobs -->
 
 ## Kubernetes Specification Files
 
