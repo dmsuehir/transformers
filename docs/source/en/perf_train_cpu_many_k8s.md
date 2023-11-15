@@ -15,9 +15,9 @@ rendered properly in your Markdown viewer.
 
 # Efficient Training on Multiple CPUs from a Kubernetes Cluter
 
-Using multiple CPUs accelerates the model training process by distributing the workload across multiple nodes. This guide
-builds upon [Distributed CPU Training](https://huggingface.co/docs/transformers/perf_train_cpu_many) to move the workload
-to a [Kubernetes](https://kubernetes.io) cluster.
+Using multiple CPUs accelerates the model training process by distributing the workload across multiple nodes. This
+guide builds upon the [Distributed CPU Training](https://huggingface.co/docs/transformers/perf_train_cpu_many) example
+to move the workload to a [Kubernetes](https://kubernetes.io) cluster.
 
 [Kubeflow](https://www.kubeflow.org) simplifies the process of deploying machine learning workloads to Kubernetes
 clusters. For this example, the [Kubeflow PyTorchJob training operator](https://www.kubeflow.org/docs/components/training/pytorch/)
@@ -27,14 +27,16 @@ is used to deploy the distributed training job to the cluster. For efficient tra
 
 ## Cluster setup
 
-This guide assume that you already have a Kubernetes clusters with multiple CPUs. Use `kubectl get nodes` to see a list
-the nodes that are available on your cluster.
+This guide assume that you already have a Kubernetes clusters with multiple CPUs that will be used to run the
+distributed training job. Use `kubectl get nodes` to see a list the nodes that are available on your cluster. Before
+running the distributed training job on the cluster, Kubeflow needs to be installed and there needs to be a storage
+location that can be used for the dataset and model files.
 
 ### Kubeflow Install
 
 Follow the [Kubeflow installation](https://www.kubeflow.org/docs/started/installing-kubeflow/) guide to deploy the
 Kubeflow resources to your cluster. To verify that the PyTorch custom resource has been deployed to your cluster, use
-`kubectl get crd` and verify that the output includes `pytorchjob.kubeflow.org` like the example below:
+`kubectl get crd` and ensure that the output includes `pytorchjob.kubeflow.org` like the sample output below:
 ```
 NAME                                                  CREATED AT
 ...
@@ -46,10 +48,17 @@ pytorchjobs.kubeflow.org                              2023-03-24T15:42:17Z
 
 Storage is required to storing the dataset, model files, checkpoints, etc. during training. There are different options
 for storing data, depending on your situation. If you are using a cloud service provider like AWS or Google Cloud the
-storage buckets can be setup to be used as storage with Kubernetes. Alternatively, NFS can be used with a Kubernetes
-storageclass and a persistent volume claim (PVC).
-
+storage buckets can be setup to be used as storage with Kubernetes.
 <!-- TODO: Add more details here -->
+
+Alternatively, NFS can be used with a Kubernetes storageclass and a persistent volume claim (PVC).
+`kubectl get storageclass` can be used to list the storage classes on the cluster. The example output below shows a
+storage class called `nfs-client`. The storage class name is important, because it will be used in the yaml file used
+to [deploy the Persistent Volume Claim](#persistent-volume-claim) later in this guide.
+```
+NAME                   PROVISIONER                                     RECLAIMPOLICY   VOLUMEBINDINGMODE   ALLOWVOLUMEEXPANSION   AGE
+nfs-client (default)   cluster.local/nfs-subdir-external-provisioner   Delete          Immediate           true                   310d
+```
 
 ## Container
 
@@ -60,24 +69,30 @@ typically need to include PyTorch, transformers, Intel Extension for PyTorch, In
 OpenSSH to communicate between the containers. This container can be used as a base and then you can include your
 training script on top of that.
 
-<!-- TODO: Maybe we can contribute a dockerfile here that is updated and includes everything needed to run distributed jobs -->
+<!--
+TODO: Maybe we can contribute a dockerfile here that is updated and includes everything needed to run distributed jobs.
+      There's a docker directory with dockerfiles for CPU and GPU, however the CPU dockerfiles are outdated and don't
+      include things like IPEX. Also, Hugging Face has transformers images published to DockerHub, but again the ones
+      for CPU are outdated (haven't been updated in 2 years) -- maybe we can find out why.
+-->
 
 ## Kubernetes Specification Files
 
-The Kubernetes specification files define the resources that get deployed to the cluster. This will typically include
-the `PyTorchJob` for training and optionally a `PersistentVolumeClaim` if an NFS storage class is being used for storing
-datasets, trained model files, etc.
+The Kubernetes specification files define the resources that get deployed to the cluster. For a distributed PyTorch
+training job, this will typically include the `PyTorchJob` for worker pods and optionally a `PersistentVolumeClaim` if
+an NFS storage class is being used for storing datasets, trained model files, etc.
 
 ### Persistent Volume Claim
 
 If you are using a [Persistent Volume Claim (PVC)](https://kubernetes.io/docs/concepts/storage/persistent-volumes/),
-this can be deployed to the cluster before the training job. To set the PVC spec, you will need to know the name of the
-NFS [storage class](https://kubernetes.io/docs/concepts/storage/storage-classes/). If you don't know have this
-information, use `kubectl get storageclass` to see a list of all the storage classes on your cluster.
+this should be deployed to the cluster before the training job. To define the PVC spec, you will need to know the name
+of the NFS [storage class](https://kubernetes.io/docs/concepts/storage/storage-classes/). If you don't know have this
+information, use `kubectl get storageclass` to see a list of all the storage classes on your cluster. If a storage class
+name is not provided, the cluster's default storage class will be used.
 
 In addition to the storage class name, the PVC spec yaml defines the name and namespace for the PVC and the storage
 size. The snippet below shows an example of yaml file for a PVC named `tranformers-pvc` in the `kubeflow` namespace that
-uses a storage class named `nfs-client`:
+uses a storage class named `nfs-client`.
 ```yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -92,12 +107,12 @@ spec:
     requests:
       storage: 30Gi
 ```
-The PVC can be deployed to the Kubernetes cluster using the yaml like:
+Deploy the persistent volume claim to the cluster using the yaml file:
 ```
 kubectl create -f pvc.yaml
 ```
-After that, you can verify that the PVC deployment was successful by ensuring that `transformers-pvc` is printed in the
-`kubectl get pvc -n kubeflow` list:
+After that, you can verify that the PVC deployment was successful by ensuring that PVC name (in this case,
+`transformers-pvc`) is displayed in the `kubectl get pvc -n kubeflow` list:
 ```
 NAME                      STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE
 ...
@@ -108,7 +123,7 @@ transformers-pvc          Bound    pvc-73ab011a-02e8-42f1-b078-1a3d4706509b   30
 
 The PyTorchJob is used to run the distributed training job on the cluster. The yaml file for the PyTorchJob defines
 import parameters such as:
- * A name for the PyTorchJob
+ * The name of the PyTorchJob
  * The number of replicas (workers)
  * The types of resources (node label, memory, and CPU) needed for each worker
  * The image/tag for the Docker container to use
@@ -116,8 +131,9 @@ import parameters such as:
  * The python script and it's parameters that will be used to run the training job
  * A volume mount for the PVC
 
-The volume mount defines a path where the PVC deployed in the previous step will be mounted in the container for each
-worker pod. This location can be used for the dataset, checkpoint files, and the saved model after training completes.
+The volume mount defines a path where the PVC will be mounted in the container for each worker pod. This location can be
+used for the dataset, checkpoint files, and the saved model after training completes.
+<!-- TODO: What would it look like if a cloud storage bucket was being used instead? -->
 
 The snippet below is an example of a yaml file for a PyTorchJob with 4 workers running the
 [question-answering example](https://github.com/huggingface/transformers/tree/main/examples/pytorch/question-answering).
@@ -203,14 +219,16 @@ spec:
             emptyDir:
               medium: Memory
 ```
-To run this example, update the spec based on the nodes in your cluster. Use `kubectl get nodes` and
-`kubectl describe node <node name>` to find the number of available nodes and the CPU and memory capacity of the nodes.
-The CPU resource limits/requests in the yaml are defined in
+To run this example, update the yaml based on the nodes in your cluster. Use `kubectl get nodes` and
+`kubectl describe node <node name>` to find the number of available nodes, node labels, and the CPU and memory capacity
+of the nodes. The CPU resource limits/requests in the yaml are defined in
 [cpu units](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#meaning-of-cpu) where 1 CPU
 unit is equivalent to 1 physical CPU core or 1 virtual core (depending on whether the node is a physical host or a VM).
 The amount of CPU and memory limits/requests defined in the yaml should be less than the amount of available CPU/memory
 capacity on a single machine. It is usually a good idea to not use the entire machine's capacity in order to leave
-some resources for the kubelet and OS.
+some resources for the kubelet and OS. In order to get ["guaranteed"](https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/#guaranteed)
+[quality of service](https://kubernetes.io/docs/tasks/configure-pod-container/quality-service-pod/) for the worker pods,
+set the same CPU and memory amounts for both the resource limits and requests.
 
 After the PyTorchJob spec has been updated with values appropriate to your cluster and training job, it can be deployed
 to the cluster using:
@@ -220,14 +238,14 @@ kubectl create -f pytorchjob.yaml
 
 The `kubectl get pods -n kubeflow` command can then be used to list the pods in the `kubeflow` namespace. You should see
 the worker pods for the PyTorchJob that was just deployed. At first, they will probably have a status of "Pending" as
-the containers get pulled and started, then it should change to "Running".
+the containers get pulled and created, then the status should change to "Running".
 ```
 NAME                                                     READY   STATUS                  RESTARTS          AGE
 ...
-transformers-pytorchjob-worker-0                         0/2     Running                 0                 7m37s
-transformers-pytorchjob-worker-1                         0/2     Running                 0                 7m37s
-transformers-pytorchjob-worker-2                         0/2     Running                 0                 7m37s
-transformers-pytorchjob-worker-3                         0/2     Running                 0                 7m37s
+transformers-pytorchjob-worker-0                         1/1     Running                 0                 7m37s
+transformers-pytorchjob-worker-1                         1/1     Running                 0                 7m37s
+transformers-pytorchjob-worker-2                         1/1     Running                 0                 7m37s
+transformers-pytorchjob-worker-3                         1/1     Running                 0                 7m37s
 ...
 ```
 
@@ -237,16 +255,17 @@ kubectl logs -n kubeflow transformers-pytorchjob-worker-0 -f
 ```
 
 After the training job completes, the trained model can be copied from NFS or storage bucket, if cloud storage was
-being used.
+being used. When you are done with the job, the PVC and PyTorch job resources can be deleted from the cluster using
+`kubectl delete -f <yaml file>` or `kubectl delete <resource type> <resource name>`.
 
 ## Summary
 
-This guide walked through using the [Kubeflow PyTorch Training Operator](https://www.kubeflow.org/docs/components/training/pytorch/)
+This guide walked through the setup and best known methods for using the
+[Kubeflow PyTorch training operator](https://www.kubeflow.org/docs/components/training/pytorch/)
 to run a distributed training job on a Kubernetes cluster with the
 [question-answering example](https://github.com/huggingface/transformers/tree/main/examples/pytorch/question-answering).
-To run your own script and workload on a Kubernetes cluster, the PyTorchJob yaml above can be used as a template. Swap
-in your container image along with the python script and training parameters to the yaml file.
+The PyTorchJob yaml used in this example can be used as a template to run your own script and workload. Swap in your
+container image along with the python script and training parameters to the yaml file.
 
-For a more detailed example, out this [blog post (TBD)](TBD) that fine tunes
-[meta-llama/Llama-2-7b-hf](https://huggingface.co/meta-llama/Llama-2-7b-hf) using multiple nodes from a Kubernetes
-cluster with the Kubeflow PyTorch training operator and a [Helm chart](https://helm.sh).
+For a more detailed example, out this [blog post (TBD)](TBD) that uses a Kubernetes cluster to fine tune
+[meta-llama/Llama-2-7b-hf](https://huggingface.co/meta-llama/Llama-2-7b-hf).
