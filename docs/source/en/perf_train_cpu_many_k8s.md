@@ -28,21 +28,28 @@ is used to deploy the distributed training job to the cluster. For efficient tra
 ## Cluster setup
 
 > If [role-based access control (RBAC)](https://kubernetes.io/docs/reference/access-authn-authz/rbac/) is enabled on the
-> cluster, listing nodes and many other cluster wide commands require specific roles to be granted to the user.
+> cluster, listing nodes and many other cluster wide commands require specific roles to be granted to the user. The
+> `kubectl auth can-i get nodes` will return "yes" if you are able to list the nodes. Otherwise, check with your cluster
+> admin to get a list of the nodes that you have access to.
 
-<!--
-TODO: In the case where RBAC prevents a user from seeing the nodes, what alternative command can we provide to allow the
-      user to verify that their kubectl is properly configured. kubectl get pods? kubectl get ns?
--->
-This guide assumes that you access to a Kubernetes cluster with multiple CPUs that will be used to run the
-distributed training job. Use `kubectl get nodes` to verify that kubectl is properly configured and see a list of the
-nodes in the cluster. Before running the distributed training job on the cluster, Kubeflow needs to be installed and
-there needs to be a storage location that can be used for the dataset and model files.
+This guide assumes that you [installed `kubectl`](https://kubernetes.io/docs/tasks/tools/) and have access to a
+Kubernetes cluster with multiple CPU nodes that will be used to run the distributed training job. If
+`kubectl auth can-i get nodes` returns true, use `kubectl get nodes` to verify that kubectl is properly configured and
+see a list of the nodes in the cluster. Otherwise, another command like `kubectl get pods` can be used to verify that
+kubectl is working with your cluster.
+
+Before running the distributed training job on the cluster, Kubeflow needs to be installed and there needs to be a
+storage location that can be used for the dataset and model files. The next couple of sections explain this in more
+detail.
 
 ### Kubeflow Install
 
 Follow the [Kubeflow installation](https://www.kubeflow.org/docs/started/installing-kubeflow/) guide to deploy the
-Kubeflow resources to your cluster. To verify that the PyTorch custom resource has been deployed to your cluster, use
+Kubeflow resources to your cluster. Kubeflow is typically installed in a namespace called `kubeflow`, but you can check
+with your cluster admin to find out if a different namespace should be used. If you are using a namespace other than
+`kubeflow`, you will need to update the `namespace: kubeflow` line in the yaml examples in this guide.
+
+To verify that the PyTorch custom resource has been deployed to your cluster, use
 `kubectl get crd pytorchjobs.kubeflow.org` and ensure that the output is similar to:
 ```
 NAME                       CREATED AT
@@ -224,14 +231,16 @@ spec:
             emptyDir:
               medium: Memory
 ```
-To run this example, update the yaml based on the nodes in your cluster. Use `kubectl get nodes` and
-`kubectl describe node <node name>` to find the number of available nodes, node labels, and the CPU and memory capacity
-of the nodes. The CPU resource limits/requests in the yaml are defined in
+To run this example, update the yaml based on the nodes in your cluster. Use `kubectl get nodes` (or ask your cluster
+admin for a list of nodes available to you) and `kubectl describe node <node name>` to find the number of available
+nodes, node labels, and the CPU and memory capacity of the nodes.
+
+The CPU resource limits/requests in the yaml are defined in
 [cpu units](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#meaning-of-cpu) where 1 CPU
 unit is equivalent to 1 physical CPU core or 1 virtual core (depending on whether the node is a physical host or a VM).
 The amount of CPU and memory limits/requests defined in the yaml should be less than the amount of available CPU/memory
-capacity on a single machine. It is usually a good idea to not use the entire machine's capacity in order to leave
-some resources for the kubelet and OS. In order to get ["guaranteed"](https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/#guaranteed)
+capacity on a single machine. It is usually a good idea to not use the entire machine's capacity in order to leave some
+resources for the kubelet and OS. In order to get ["guaranteed"](https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/#guaranteed)
 [quality of service](https://kubernetes.io/docs/tasks/configure-pod-container/quality-service-pod/) for the worker pods,
 set the same CPU and memory amounts for both the resource limits and requests.
 
