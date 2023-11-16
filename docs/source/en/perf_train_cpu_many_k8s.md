@@ -27,21 +27,26 @@ is used to deploy the distributed training job to the cluster. For efficient tra
 
 ## Cluster setup
 
-This guide assume that you already have a Kubernetes clusters with multiple CPUs that will be used to run the
-distributed training job. Use `kubectl get nodes` to see a list the nodes that are available on your cluster. Before
-running the distributed training job on the cluster, Kubeflow needs to be installed and there needs to be a storage
-location that can be used for the dataset and model files.
+> If [role-based access control (RBAC)](https://kubernetes.io/docs/reference/access-authn-authz/rbac/) is enabled on the
+> cluster, listing nodes and many other cluster wide commands require specific roles to be granted to the user.
+
+<!--
+TODO: In the case where RBAC prevents a user from seeing the nodes, what alternative command can we provide to allow the
+      user to verify that their kubectl is properly configured. kubectl get pods? kubectl get ns?
+-->
+This guide assumes that you access to a Kubernetes cluster with multiple CPUs that will be used to run the
+distributed training job. Use `kubectl get nodes` to verify that kubectl is properly configured and see a list of the
+nodes in the cluster. Before running the distributed training job on the cluster, Kubeflow needs to be installed and
+there needs to be a storage location that can be used for the dataset and model files.
 
 ### Kubeflow Install
 
 Follow the [Kubeflow installation](https://www.kubeflow.org/docs/started/installing-kubeflow/) guide to deploy the
 Kubeflow resources to your cluster. To verify that the PyTorch custom resource has been deployed to your cluster, use
-`kubectl get crd` and ensure that the output includes `pytorchjob.kubeflow.org` like the sample output below:
+`kubectl get crd pytorchjobs.kubeflow.org` and ensure that the output is similar to:
 ```
-NAME                                                  CREATED AT
-...
-pytorchjobs.kubeflow.org                              2023-03-24T15:42:17Z
-...
+NAME                       CREATED AT
+pytorchjobs.kubeflow.org   2023-03-24T15:42:17Z
 ```
 
 ### Storage
@@ -267,5 +272,5 @@ to run a distributed training job on a Kubernetes cluster with the
 The PyTorchJob yaml used in this example can be used as a template to run your own script and workload. Swap in your
 container image along with the python script and training parameters to the yaml file.
 
-For a more detailed example, out this [blog post (TBD)](TBD) that uses a Kubernetes cluster to fine tune
+For a more detailed example, check out this [blog post (TBD)](TBD) that uses a Kubernetes cluster to fine tune
 [meta-llama/Llama-2-7b-hf](https://huggingface.co/meta-llama/Llama-2-7b-hf).
