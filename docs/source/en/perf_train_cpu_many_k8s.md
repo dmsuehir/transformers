@@ -29,8 +29,8 @@ is used to deploy the distributed training job to the cluster. For efficient tra
 
 > If [role-based access control (RBAC)](https://kubernetes.io/docs/reference/access-authn-authz/rbac/) is enabled on the
 > cluster, listing nodes and many other cluster wide commands require specific roles to be granted to the user. The
-> `kubectl auth can-i get nodes` will return "yes" if you are able to list the nodes. Otherwise, check with your cluster
-> admin to get a list of the nodes that you have access to.
+> `kubectl auth can-i get nodes` will return "yes" if you are able to list the nodes. Otherwise, consult your cluster
+> admin to get a list of the nodes available to your user group.
 
 This guide assumes that you [installed `kubectl`](https://kubernetes.io/docs/tasks/tools/) and have access to a
 Kubernetes cluster with multiple CPU nodes that will be used to run the distributed training job. If
